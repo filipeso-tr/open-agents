@@ -1,9 +1,4 @@
-import { gateway } from "@open-harness/agent";
-import {
-  convertToModelMessages,
-  type GatewayModelId,
-  type LanguageModelUsage,
-} from "ai";
+import { convertToModelMessages, type LanguageModelUsage } from "ai";
 import { nanoid } from "nanoid";
 import { webAgent } from "@/app/config";
 import {
@@ -12,8 +7,6 @@ import {
   upsertChatMessageScoped,
 } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
-import { resolveModelSelection } from "@/lib/model-variants";
-import { DEFAULT_MODEL_ID } from "@/lib/models";
 import { resumableStreamContext } from "@/lib/resumable-stream-context";
 import { buildActiveLifecycleUpdate } from "@/lib/sandbox/lifecycle";
 import {
@@ -21,6 +14,7 @@ import {
   requireOwnedSessionChat,
 } from "./_lib/chat-context";
 import { scheduleLatestMessagePersistence } from "./_lib/message-persistence";
+import { resolveChatModelSelection } from "./_lib/model-selection";
 import { handleChatStreamFinish } from "./_lib/post-finish";
 import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { createChatRuntime } from "./_lib/runtime";
@@ -119,72 +113,18 @@ export async function POST(req: Request) {
   ]);
 
   const modelVariants = preferences?.modelVariants ?? [];
-
-  // Resolve model from chat's modelId, supporting variant IDs.
-  const selectedModelId = chat.modelId ?? DEFAULT_MODEL_ID;
-  const mainSelection = resolveModelSelection(selectedModelId, modelVariants);
-  if (mainSelection.isMissingVariant) {
-    console.warn(
-      `Selected model variant "${selectedModelId}" was not found. Falling back to default model.`,
-    );
-  }
-
-  const mainResolvedModelId = mainSelection.isMissingVariant
-    ? DEFAULT_MODEL_ID
-    : mainSelection.resolvedModelId;
-
-  let model: GatewayModelId;
-  let modelProviderOptions: typeof mainSelection.providerOptionsByProvider;
-  try {
-    model = mainResolvedModelId as GatewayModelId;
-    modelProviderOptions = mainSelection.isMissingVariant
-      ? undefined
-      : mainSelection.providerOptionsByProvider;
-    gateway(model, {
-      providerOptionsOverrides: modelProviderOptions,
-    });
-  } catch (error) {
-    console.error(
-      `Invalid model ID "${mainResolvedModelId}", falling back to default:`,
-      error,
-    );
-    model = DEFAULT_MODEL_ID as GatewayModelId;
-    modelProviderOptions = undefined;
-  }
-
-  // Resolve subagent model from user preferences (if configured)
-  let subagentModel: GatewayModelId | undefined;
-  let subagentModelProviderOptions:
-    | ReturnType<typeof resolveModelSelection>["providerOptionsByProvider"]
-    | undefined;
-  if (preferences?.defaultSubagentModelId) {
-    const subagentSelection = resolveModelSelection(
-      preferences.defaultSubagentModelId,
-      modelVariants,
-    );
-
-    if (subagentSelection.isMissingVariant) {
-      console.warn(
-        `Subagent model variant "${preferences.defaultSubagentModelId}" was not found. Falling back to default model.`,
-      );
-    }
-
-    const subagentResolvedModelId = subagentSelection.isMissingVariant
-      ? DEFAULT_MODEL_ID
-      : subagentSelection.resolvedModelId;
-
-    try {
-      subagentModel = subagentResolvedModelId as GatewayModelId;
-      subagentModelProviderOptions = subagentSelection.isMissingVariant
-        ? undefined
-        : subagentSelection.providerOptionsByProvider;
-      gateway(subagentModel, {
-        providerOptionsOverrides: subagentModelProviderOptions,
-      });
-    } catch (error) {
-      console.error("Failed to resolve subagent model preference:", error);
-    }
-  }
+  const mainModelSelection = resolveChatModelSelection({
+    selectedModelId: chat.modelId,
+    modelVariants,
+    missingVariantLabel: "Selected model variant",
+  });
+  const subagentModelSelection = preferences?.defaultSubagentModelId
+    ? resolveChatModelSelection({
+        selectedModelId: preferences.defaultSubagentModelId,
+        modelVariants,
+        missingVariantLabel: "Subagent model variant",
+      })
+    : undefined;
 
   // Use Redis stop signals as the sole cancellation mechanism for generation.
   // We intentionally do not bind `req.signal` so a transient client disconnect
@@ -202,16 +142,10 @@ export async function POST(req: Request) {
           currentBranch: sandbox.currentBranch,
           environmentDetails: sandbox.environmentDetails,
         },
-        model: {
-          id: model,
-          providerOptionsOverrides: modelProviderOptions,
-        },
-        ...(subagentModel
+        model: mainModelSelection,
+        ...(subagentModelSelection
           ? {
-              subagentModel: {
-                id: subagentModel,
-                providerOptionsOverrides: subagentModelProviderOptions,
-              },
+              subagentModel: subagentModelSelection,
             }
           : {}),
         ...(skills.length > 0 && { skills }),
@@ -302,7 +236,7 @@ export async function POST(req: Request) {
         chatId,
         sessionRecord,
         sandbox,
-        model,
+        model: mainModelSelection.id,
         totalMessageUsage,
         shouldAutoCommitOnFinish: abortLifecycle.shouldAutoCommitOnFinish(),
         preferences,
