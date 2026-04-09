@@ -16,6 +16,7 @@ import {
   SquareDot,
   SquareMinus,
   SquarePlus,
+  WandSparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DiffFile } from "@/app/api/sessions/[sessionId]/diff/route";
@@ -223,9 +224,9 @@ function InlineCommitPanel({
   onCommitted?: () => void;
   isAgentWorking: boolean;
 }) {
-  const [commitTitle, setCommitTitle] = useState("");
-  const [commitBody, setCommitBody] = useState("");
+  const [commitMessage, setCommitMessage] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isGeneratingMessage, setIsGeneratingMessage] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitSuccess, setCommitSuccess] = useState<{
     commitSha?: string;
@@ -293,21 +294,43 @@ function InlineCommitPanel({
     }
   };
 
-  const handleCommit = async () => {
+  const handleGenerateMessage = async () => {
+    setIsGeneratingMessage(true);
+    try {
+      const res = await fetch(
+        `/api/sessions/${session.id}/generate-commit-message`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (data.message) {
+        setCommitMessage(data.message);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setIsGeneratingMessage(false);
+    }
+  };
+
+  const handleCommit = async (skipPush = false) => {
     if (!hasSandbox || !hasPendingGitWork) return;
     setIsCommitting(true);
     setCommitError(null);
     setCommitSuccess(null);
 
     try {
+      const trimmed = commitMessage.trim();
+      const lines = trimmed.split("\n");
+      const commitTitle = lines[0] ?? "";
+      const commitBody = lines.slice(1).join("\n").trim();
+
       const response = await commitAndPushSessionChanges({
         sessionId: session.id,
         sessionTitle: session.title,
         baseBranch,
         branchName: displayBranch,
-        ...(commitTitle.trim()
-          ? { commitTitle: commitTitle.trim(), commitBody: commitBody.trim() }
-          : {}),
+        ...(commitTitle ? { commitTitle, commitBody } : {}),
+        skipPush,
       });
 
       if (response.branchName && response.branchName !== "HEAD") {
@@ -316,10 +339,11 @@ function InlineCommitPanel({
 
       setCommitSuccess({
         commitSha: response.gitActions?.commitSha,
-        commitMessage: response.gitActions?.commitMessage,
+        commitMessage:
+          response.gitActions?.commitMessage ??
+          (skipPush ? "Changes committed" : "Changes committed & pushed"),
       });
-      setCommitTitle("");
-      setCommitBody("");
+      setCommitMessage("");
 
       onCommitted?.();
 
@@ -389,44 +413,76 @@ function InlineCommitPanel({
     );
   }
 
+  const commitDisabled =
+    isAgentWorking || isCommitting || !hasSandbox || !hasPendingGitWork;
+
   // Commit form
   return (
     <div className="space-y-2">
-      <Input
-        placeholder="Commit message (optional)"
-        value={commitTitle}
-        onChange={(e) => setCommitTitle(e.target.value)}
-        disabled={isAgentWorking || isCommitting || !hasPendingGitWork}
-        className="h-8 text-xs"
-      />
-      <Textarea
-        placeholder="Description (optional)"
-        value={commitBody}
-        onChange={(e) => setCommitBody(e.target.value)}
-        disabled={isAgentWorking || isCommitting || !hasPendingGitWork}
-        rows={3}
-        className="resize-none text-xs field-sizing-fixed"
-      />
-      <Button
-        size="sm"
-        className="w-full text-xs"
-        onClick={() => void handleCommit()}
-        disabled={
-          isAgentWorking || isCommitting || !hasSandbox || !hasPendingGitWork
-        }
-      >
-        {isCommitting ? (
-          <>
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            Committing...
-          </>
-        ) : (
-          <>
-            <GitCommit className="mr-1.5 h-3.5 w-3.5" />
-            Commit & Push
-          </>
-        )}
-      </Button>
+      <div className="relative">
+        <Textarea
+          placeholder="Commit message"
+          value={commitMessage}
+          onChange={(e) => setCommitMessage(e.target.value)}
+          disabled={isAgentWorking || isCommitting || !hasPendingGitWork}
+          rows={2}
+          className="resize-none pb-7 text-xs"
+        />
+        <button
+          type="button"
+          className="absolute bottom-1.5 left-1.5 rounded p-1 text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
+          onClick={() => void handleGenerateMessage()}
+          disabled={isGeneratingMessage || !hasPendingGitWork}
+        >
+          {isGeneratingMessage ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <WandSparkles className="h-3 w-3" />
+          )}
+        </button>
+      </div>
+      <div className="flex w-full">
+        <Button
+          size="sm"
+          className="min-w-0 flex-1 rounded-r-none text-xs"
+          onClick={() => void handleCommit()}
+          disabled={commitDisabled}
+        >
+          {isCommitting ? (
+            <>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              Committing...
+            </>
+          ) : (
+            <>
+              <GitCommit className="mr-1.5 h-3.5 w-3.5" />
+              Commit & Push
+            </>
+          )}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="default"
+              size="icon"
+              className="h-8 w-8 rounded-l-none border-l border-l-primary-foreground/25"
+              disabled={commitDisabled}
+              aria-label="Commit options"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[10rem]">
+            <DropdownMenuItem
+              onSelect={() => void handleCommit(true)}
+              className="gap-2 text-xs"
+            >
+              <GitCommit className="h-3.5 w-3.5 text-muted-foreground" />
+              Commit only
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       {isAgentWorking && (
         <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
           Wait for the agent to finish before committing or pushing.
@@ -472,6 +528,7 @@ function InlinePrCreatePanel({
   const [prSuccess, setPrSuccess] = useState<{
     prUrl: string;
     requiresManualCreation?: boolean;
+    isDraft?: boolean;
   } | null>(null);
   const [baseBranch, setBaseBranch] = useState("main");
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
@@ -523,7 +580,31 @@ function InlinePrCreatePanel({
     }
   };
 
-  const handleCreatePr = async () => {
+  const handleGenerateContent = async () => {
+    setIsGenerating(true);
+    try {
+      const generated = await generatePullRequestContent({
+        sessionId: session.id,
+        sessionTitle: session.title,
+        baseBranch,
+        branchName: displayBranch,
+      });
+      setPrTitle(generated.title ?? session.title);
+      setPrBody(generated.body ?? "");
+      if (generated.prHeadOwner) {
+        setPrHeadOwner(generated.prHeadOwner);
+      }
+      if (generated.branchName && generated.branchName !== "HEAD") {
+        setResolvedBranch(generated.branchName);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCreatePr = async (isDraft = false) => {
     setIsCreatingPr(true);
     setPrError(null);
 
@@ -531,7 +612,7 @@ function InlinePrCreatePanel({
       let finalTitle = prTitle.trim();
       let finalBody = prBody.trim();
 
-      // Auto-generate if title is empty
+      // Auto-generate if content is empty
       if (!finalTitle) {
         setIsGenerating(true);
         try {
@@ -588,6 +669,7 @@ function InlinePrCreatePanel({
           body: finalBody,
           baseBranch,
           headOwner: prHeadOwner ?? undefined,
+          isDraft,
         }),
       });
 
@@ -600,6 +682,7 @@ function InlinePrCreatePanel({
       setPrSuccess({
         prUrl: data.prUrl,
         requiresManualCreation: Boolean(data.requiresManualCreation),
+        isDraft,
       });
 
       if (typeof data.prNumber === "number") {
@@ -627,7 +710,9 @@ function InlinePrCreatePanel({
           <span>
             {prSuccess.requiresManualCreation
               ? "Compare page opened"
-              : "Pull request created!"}
+              : prSuccess.isDraft
+                ? "Draft pull request created!"
+                : "Pull request created!"}
           </span>
         </div>
         {/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
@@ -696,42 +781,82 @@ function InlinePrCreatePanel({
     );
   }
 
+  const prDisabled = isAgentWorking || isCreatingPr || !hasSandbox;
+
   // PR creation form
   return (
     <div className="space-y-2">
-      <Input
-        placeholder="PR title (optional)"
-        value={prTitle}
-        onChange={(e) => setPrTitle(e.target.value)}
-        disabled={isAgentWorking || isCreatingPr}
-        className="h-8 text-xs"
-      />
+      <div className="relative">
+        <Input
+          placeholder="PR title"
+          value={prTitle}
+          onChange={(e) => setPrTitle(e.target.value)}
+          disabled={isAgentWorking || isCreatingPr}
+          className="h-8 pr-7 text-xs"
+        />
+        <button
+          type="button"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
+          onClick={() => void handleGenerateContent()}
+          disabled={isGenerating}
+        >
+          {isGenerating ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <WandSparkles className="h-3 w-3" />
+          )}
+        </button>
+      </div>
       <Textarea
-        placeholder="Description (optional)"
+        placeholder="Description"
         value={prBody}
         onChange={(e) => setPrBody(e.target.value)}
         disabled={isAgentWorking || isCreatingPr}
         rows={3}
-        className="resize-none text-xs field-sizing-fixed"
+        className="resize-none text-xs"
       />
-      <Button
-        size="sm"
-        className="w-full text-xs"
-        onClick={() => void handleCreatePr()}
-        disabled={isAgentWorking || isCreatingPr || !hasSandbox}
-      >
-        {isCreatingPr ? (
-          <>
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            {isGenerating ? "Generating..." : "Creating..."}
-          </>
-        ) : (
-          <>
-            <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
-            Create Pull Request
-          </>
-        )}
-      </Button>
+      <div className="flex w-full">
+        <Button
+          size="sm"
+          className="min-w-0 flex-1 rounded-r-none text-xs"
+          onClick={() => void handleCreatePr()}
+          disabled={prDisabled}
+        >
+          {isCreatingPr ? (
+            <>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              {isGenerating ? "Generating..." : "Creating..."}
+            </>
+          ) : (
+            <>
+              <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+              Create Pull Request
+            </>
+          )}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="default"
+              size="icon"
+              className="h-8 w-8 rounded-l-none border-l border-l-primary-foreground/25"
+              disabled={prDisabled}
+              aria-label="PR options"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[10rem]">
+            <DropdownMenuItem
+              onSelect={() => void handleCreatePr(true)}
+              className="gap-2 text-xs"
+            >
+              <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground" />
+              Create Draft PR
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       {isAgentWorking && (
         <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
           Wait for the agent to finish before creating a pull request.

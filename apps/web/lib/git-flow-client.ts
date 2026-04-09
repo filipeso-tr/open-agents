@@ -5,6 +5,7 @@ interface GeneratePrRequest {
   branchName: string;
   createBranchOnly?: boolean;
   commitOnly?: boolean;
+  skipPush?: boolean;
   commitTitle?: string;
   commitBody?: string;
 }
@@ -146,6 +147,7 @@ export async function commitAndPushSessionChanges(params: {
   branchName: string;
   commitTitle?: string;
   commitBody?: string;
+  skipPush?: boolean;
 }): Promise<GeneratePrResult> {
   return requestGeneratePr({
     ...params,

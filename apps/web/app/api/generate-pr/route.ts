@@ -30,6 +30,7 @@ interface GeneratePRRequest {
   branchName: string;
   createBranchOnly?: boolean;
   commitOnly?: boolean;
+  skipPush?: boolean;
   commitTitle?: string;
   commitBody?: string;
 }
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
     branchName,
     createBranchOnly,
     commitOnly,
+    skipPush,
     commitTitle,
     commitBody,
   } = body;
@@ -383,7 +385,14 @@ Respond with ONLY the commit message, nothing else.`,
     }
   }
 
-  // 5. Check if branch needs to be pushed
+  // 5. Check if branch needs to be pushed (skip if requested)
+  if (skipPush && commitOnly) {
+    return Response.json({
+      branchName: resolvedBranch,
+      gitActions,
+    });
+  }
+
   const trackingResult = await sandbox.exec(
     "git rev-list @{upstream}..HEAD 2>/dev/null || echo 'needs-push'",
     cwd,
