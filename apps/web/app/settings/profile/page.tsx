@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/hooks/use-session";
 import { fetcher } from "@/lib/swr";
 import { formatDateOnly } from "@/lib/usage/date-range";
-import type { UsageInsights } from "@/lib/usage/types";
+import type { UsageInsights, UsageRepositoryInsight } from "@/lib/usage/types";
 import { UsageInsightsSection } from "../usage/usage-insights-section";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -187,7 +187,9 @@ function StatItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between py-2">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-sm font-semibold tabular-nums">{value}</span>
+      <span className="text-sm font-semibold font-mono tabular-nums">
+        {value}
+      </span>
     </div>
   );
 }
@@ -289,7 +291,9 @@ function UsagePieChart({
             }}
           >
             <div className="font-medium">{hoveredSegment.label}</div>
-            <div>{formatTokens(hoveredSegment.value)} tokens</div>
+            <div className="font-mono">
+              {formatTokens(hoveredSegment.value)} tokens
+            </div>
           </div>
         ) : null}
       </div>
@@ -312,7 +316,7 @@ function UsagePieChart({
                 <span className="min-w-0 truncate font-medium">
                   {segment.label}
                 </span>
-                <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                   {formatTokens(segment.value)} ({share}%)
                 </span>
               </div>
@@ -324,10 +328,46 @@ function UsagePieChart({
   );
 }
 
+// ── Top repos for sidebar ──────────────────────────────────────────────────
+
+function TopRepos({ repos }: { repos: UsageRepositoryInsight[] }) {
+  const top3 = repos.slice(0, 3);
+  if (top3.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Top repositories
+      </h3>
+      <div className="space-y-2">
+        {top3.map((repo) => (
+          <div
+            key={`${repo.repoOwner}/${repo.repoName}`}
+            className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2"
+          >
+            <p className="truncate text-sm font-medium">
+              {repo.repoOwner}/{repo.repoName}
+            </p>
+            <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="font-mono tabular-nums">
+                {repo.sessionCount.toLocaleString()} sessions
+              </span>
+              <span className="font-mono tabular-nums">
+                {repo.totalLinesChanged.toLocaleString()} lines
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Profile sidebar (left column) ──────────────────────────────────────────
 
 function ProfileSidebar({
   totals,
+  topRepos,
 }: {
   totals: {
     inputTokens: number;
@@ -335,16 +375,19 @@ function ProfileSidebar({
     messageCount: number;
     toolCallCount: number;
   } | null;
+  topRepos: UsageRepositoryInsight[] | null;
 }) {
   const { session, loading } = useSession();
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="flex flex-col items-center gap-3">
-          <Skeleton className="h-20 w-20 rounded-full" />
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-4 w-24" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-14 w-14 shrink-0 rounded-full" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-4 w-20" />
+          </div>
         </div>
         <div className="space-y-2">
           <Skeleton className="h-4 w-full" />
@@ -363,36 +406,33 @@ function ProfileSidebar({
 
   return (
     <div className="space-y-5">
-      {/* Avatar + name */}
-      <div className="flex flex-col items-center gap-2 text-center">
+      {/* Avatar + name — left-aligned */}
+      <div className="flex items-center gap-3">
         {session.user.avatar && (
           <Image
             src={session.user.avatar}
             alt={session.user.username}
-            width={80}
-            height={80}
-            className="rounded-full"
+            width={56}
+            height={56}
+            className="shrink-0 rounded-full"
           />
         )}
-        <div>
-          <p className="text-lg font-semibold leading-tight">
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold leading-tight">
             {session.user.name ?? session.user.username}
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="truncate text-sm text-muted-foreground">
             @{session.user.username}
           </p>
         </div>
       </div>
 
-      {/* Profile info */}
-      <div className="space-y-1 text-sm">
-        {session.user.email && (
-          <p className="text-muted-foreground truncate">{session.user.email}</p>
-        )}
-        <p className="text-xs text-muted-foreground/60">
-          Synced from Vercel
+      {/* Email */}
+      {session.user.email && (
+        <p className="truncate text-sm text-muted-foreground">
+          {session.user.email}
         </p>
-      </div>
+      )}
 
       {/* Stats */}
       {totals && (
@@ -408,6 +448,9 @@ function ProfileSidebar({
           />
         </div>
       )}
+
+      {/* Top repos */}
+      {topRepos && <TopRepos repos={topRepos} />}
     </div>
   );
 }
@@ -456,7 +499,6 @@ export default function ProfilePage() {
       };
     }, [data, fullData]);
 
-  const totalTokens = totals.inputTokens + totals.outputTokens;
   const mainTokens = mainTotals.inputTokens + mainTotals.outputTokens;
   const subagentTokens = subagentTotals.inputTokens + subagentTotals.outputTokens;
   const hasUsage = totals.messageCount > 0;
@@ -520,11 +562,16 @@ export default function ProfilePage() {
       })()
     : null;
 
+  const topRepos = data?.insights?.topRepositories ?? null;
+
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
       {/* Left sidebar */}
       <div className="w-full shrink-0 lg:w-56">
-        <ProfileSidebar totals={isLoading ? null : totals} />
+        <ProfileSidebar
+          totals={isLoading ? null : totals}
+          topRepos={isLoading ? null : topRepos}
+        />
       </div>
 
       {/* Right content */}
@@ -558,12 +605,11 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {/* Usage stats */}
+        {/* Usage breakdown */}
         {isLoading ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 rounded-xl" />
-            ))}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Skeleton className="h-36 rounded-xl" />
+            <Skeleton className="h-36 rounded-xl" />
           </div>
         ) : error ? (
           <p className="text-sm text-muted-foreground">
@@ -571,30 +617,6 @@ export default function ProfilePage() {
           </p>
         ) : (
           <>
-            {/* Stat blocks */}
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                <div className="text-xs text-muted-foreground">
-                  Total tokens
-                </div>
-                <div className="mt-1 text-lg font-semibold tabular-nums">
-                  {formatTokens(totalTokens)}
-                </div>
-              </div>
-              <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                <div className="text-xs text-muted-foreground">Messages</div>
-                <div className="mt-1 text-lg font-semibold tabular-nums">
-                  {totals.messageCount.toLocaleString()}
-                </div>
-              </div>
-              <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                <div className="text-xs text-muted-foreground">Tool calls</div>
-                <div className="mt-1 text-lg font-semibold tabular-nums">
-                  {totals.toolCallCount.toLocaleString()}
-                </div>
-              </div>
-            </div>
-
             {/* Pie charts */}
             {(hasUsage || modelUsage.length > 0) && (
               <div className="grid gap-6 lg:grid-cols-2">

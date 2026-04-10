@@ -52,10 +52,10 @@ function computeThresholds(values: number[]): [number, number, number, number] {
 
 const INTENSITY_CLASSES = [
   "bg-muted",
-  "bg-emerald-200 dark:bg-emerald-900",
-  "bg-emerald-400 dark:bg-emerald-700",
-  "bg-emerald-500 dark:bg-emerald-500",
-  "bg-emerald-700 dark:bg-emerald-300",
+  "bg-neutral-400/30 dark:bg-neutral-700",
+  "bg-neutral-400/60 dark:bg-neutral-500",
+  "bg-neutral-500 dark:bg-neutral-400",
+  "bg-neutral-700 dark:bg-neutral-200",
 ];
 
 function parseDateKey(dateStr: string): Date {
@@ -316,7 +316,7 @@ export function ContributionChart({
                   <div className="text-xs">
                     <div className="font-medium">{formatDate(cell.date)}</div>
                     {messageCount > 0 ? (
-                      <>
+                      <div className="font-mono tabular-nums">
                         <div>
                           {messageCount} message
                           {messageCount !== 1 ? "s" : ""}
@@ -326,7 +326,7 @@ export function ContributionChart({
                           {cell.data?.toolCallCount ?? 0} tool call
                           {(cell.data?.toolCallCount ?? 0) !== 1 ? "s" : ""}
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <div className="text-muted-foreground">No activity</div>
                     )}

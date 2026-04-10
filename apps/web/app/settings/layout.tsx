@@ -218,7 +218,7 @@ function SettingsLayout({
         </div>
         <div
           className={cn(
-            "mx-auto space-y-6 px-3 py-5 md:px-4 md:py-6",
+            "mx-auto space-y-6 px-3 py-8 md:px-4 md:py-10",
             pathname === "/settings/profile"
               ? "max-w-5xl"
               : pathname === "/settings/leaderboard"
