@@ -623,7 +623,6 @@ export function PreferencesSection() {
               </div>
               <Button
                 type="button"
-                size="sm"
                 onClick={handleAddGlobalSkillRef}
                 disabled={isSaving}
               >
