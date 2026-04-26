@@ -2782,6 +2782,12 @@ export function SessionChatContent({
   const isServerRestoring = lifecycleTiming.state === "restoring";
   const isServerHibernated = lifecycleTiming.state === "hibernated";
   const isHibernatingUi = isHibernatingTransition || isServerHibernating;
+  const isSandboxInitializing =
+    isCreatingSandbox ||
+    isRestoringSnapshot ||
+    isReconnectingSandbox ||
+    isHibernatingUi ||
+    isServerRestoring;
 
   // Sandbox is active only when BOTH the local connection info is valid AND
   // the server agrees the lifecycle is active (not hibernating/hibernated/failed).
@@ -3370,13 +3376,7 @@ export function SessionChatContent({
                         {groupedRenderMessages.length === 0 &&
                           !hasPendingResponse && (
                             <div className="flex h-full min-h-[40vh] items-center justify-center">
-                              {!isArchived &&
-                              (isCreatingSandbox ||
-                                isRestoringSnapshot ||
-                                isReconnectingSandbox ||
-                                isHibernatingUi ||
-                                isServerRestoring ||
-                                !isSandboxActive) ? (
+                              {!isArchived && isSandboxInitializing ? (
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                   <Loader2 className="h-4 w-4 animate-spin" />
                                   <p>Sandbox is initializing…</p>

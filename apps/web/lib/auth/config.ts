@@ -36,7 +36,12 @@ function getWildcardHostPattern(host: string): string | null {
 function getAuthBaseURLFallback(): string | undefined {
   return (
     process.env.BETTER_AUTH_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined)
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : undefined) ??
+    (process.env.NODE_ENV === "production"
+      ? undefined
+      : "http://localhost:3000")
   );
 }
 
@@ -67,6 +72,11 @@ function getAllowedAuthHosts(): string[] {
 
 const authBaseURLFallback = getAuthBaseURLFallback();
 const authAllowedHosts = getAllowedAuthHosts();
+
+function normalizeUsername(value: string | null | undefined): string | null {
+  const username = value?.trim();
+  return username ? username : null;
+}
 
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
@@ -115,10 +125,20 @@ export const auth = betterAuth({
       clientSecret: process.env.VERCEL_APP_CLIENT_SECRET ?? "",
       scope: ["openid", "email", "profile", "offline_access"],
       overrideUserInfoOnSignIn: true,
+      mapProfileToUser: (profile) => ({
+        username:
+          normalizeUsername(profile.preferred_username) ??
+          normalizeUsername(profile.name) ??
+          normalizeUsername(profile.email?.split("@")[0]) ??
+          profile.sub,
+      }),
     },
     github: {
       clientId: process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ?? "",
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
+      mapProfileToUser: (profile) => ({
+        username: profile.login,
+      }),
     },
   },
 

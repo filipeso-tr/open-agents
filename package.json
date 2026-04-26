@@ -1,5 +1,6 @@
 {
   "name": "open-agents",
+  "version": "link",
   "private": true,
   "workspaces": {
     "packages": [

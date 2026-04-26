@@ -6,7 +6,7 @@ This document describes how sandbox lifecycle management works, including automa
 
 | Constant | Test | Production | Purpose |
 |---|---|---|---|
-| `DEFAULT_SANDBOX_TIMEOUT_MS` | 3 min | 5 hours | Hard VM expiry from Vercel |
+| `DEFAULT_SANDBOX_TIMEOUT_MS` | 3 min | 44.5 minutes | Hard VM expiry from Vercel, leaving 30s for the stop buffer |
 | `SANDBOX_INACTIVITY_TIMEOUT_MS` | 30 min | 30 min | Inactivity window before hibernate |
 
 Configured in `lib/sandbox/config.ts`.
